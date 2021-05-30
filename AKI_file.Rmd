@@ -8,22 +8,109 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 ```
 
 ## Repurposing Trial Data to Predict Death with AKI
+We attempt to model the risk of death at 14 days with AKI using physiological & clinical variables collected as part of a clinical trial 
 
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(rms)
+library(readr)
+AKI_data <- read_csv("ELAIA-1_deidentified_data_10-6-2020.csv")
 
-```{setup}
+# Select only a subset of columns that will be used for modelling  
+# Ensure these are either 'physiological' or from basic blood tests
+AKI_set <- AKI_data %>%
+  select(age,
+         baseline_creat,
+         bicarbonate_at_rand,
+         creat_at_rand,
+         death14,
+         diastolic_at_rand,
+         hemoglobin_at_rand,
+         plateletcount_at_rand,
+         potassium_at_rand,
+         pulse_at_rand,
+         resp_at_rand,
+         sex,
+         sodium_at_rand,
+         systolic_at_rand,
+         wbcc_at_rand
+         )
 
 ```
 
-## Including Plots
+## Exploratory Data Analysis
+To look at the shape of the relationship of predcitors to death at 14 days to capture any non-linearity  
+Create function the Hmisc spike lines & examine them
+```{r}
 
-You can also embed plots, for example:
+#####
+##Examine the relationships between the variables and outcome  
+#####
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+# need rlang for NSE in following function
+library(rlang)
+
+# write function for plots
+test.plots <- function(mydf, x, y, formula) {
+  ggplot(mydf, aes(x = {{x}}, y = {{y}})) +  
+  Hmisc::histSpikeg(formula = formula,
+                    lowess = TRUE, data = mydf)
+}
+
+# Put them on a single plot
+theme_set(theme_light())
+age <- test.plots(AKI_set, age, death14, death14~age)
+bicarb <- test.plots(AKI_set, bicarbonate_at_rand, death14, death14~bicarbonate_at_rand)
+creat <- test.plots(AKI_set, creat_at_rand, death14, death14~creat_at_rand)
+dbp <- test.plots(AKI_set, diastolic_at_rand, death14, death14~diastolic_at_rand)
+hb <- test.plots(AKI_set, hemoglobin_at_rand, death14, death14~hemoglobin_at_rand)
+plt <- test.plots(AKI_set, plateletcount_at_rand, death14, death14~plateletcount_at_rand)
+kplus <- test.plots(AKI_set, potassium_at_rand, death14, death14~potassium_at_rand)
+pulse <- test.plots(AKI_set, pulse_at_rand, death14, death14~pulse_at_rand)
+resp <- test.plots(AKI_set, resp_at_rand, death14, death14~resp_at_rand)
+Naplus <- test.plots(AKI_set, sodium_at_rand, death14, death14~sodium_at_rand)
+sbp <- test.plots(AKI_set, systolic_at_rand, death14, death14~systolic_at_rand)
+wbc <- test.plots(AKI_set, wbcc_at_rand, death14, death14~wbcc_at_rand)
+
+initial_look <-
+  cowplot::plot_grid(age, bicarb, creat, dbp, hb, plt, kplus, pulse, resp, Naplus, sbp, wbc,  nrow = 4, ncol = 3, scale = .9, labels = "AUTO")
+```
+## Modelling
+Proceed via basic schema of:  
+*?calculate sample size req'd
+*split train/test 
+*deal with imbalance
+*Preprocess
+*Train
+*Metrics
+
+## Scrap 
+```{r}
+library(rms)
+m0 <- lrm(death14 ~ 
+            rcs(age, 4) +
+            rcs(bicarbonate_at_rand, 4) +
+            rcs(creat_at_rand, 4) +
+            rcs(diastolic_at_rand, 4) +
+            rcs(hemoglobin_at_rand, 4) +
+            rcs(plateletcount_at_rand, 4) +
+            rcs(potassium_at_rand, 4) +
+            rcs(pulse_at_rand, 4) +
+            rcs(resp_at_rand, 4) +
+            rcs(sodium_at_rand, 4) +
+            rcs(systolic_at_rand, 4) +
+            rcs(wbcc_at_rand, 4)
+          ,
+          data = AKI_set, 
+          x = TRUE, 
+          y = TRUE
+          )
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
