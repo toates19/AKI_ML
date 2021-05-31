@@ -2,8 +2,10 @@
 title: "AKI"
 author: "Thomas Oates"
 date: "20/05/2021"
-output: html_document
-editor_options: 
+output:
+  pdf_document: default
+  html_document: default
+editor_options:
   chunk_output_type: console
 ---
 
@@ -17,8 +19,9 @@ We attempt to model the risk of death at 14 days with AKI using physiological & 
 ```{r}
 library(tidyverse)
 library(tidymodels)
-library(rms)
+#library(rms)
 library(readr)
+library(themis)
 AKI_data <- read_csv("ELAIA-1_deidentified_data_10-6-2020.csv")
 
 # Select only a subset of columns that will be used for modelling  
@@ -88,6 +91,75 @@ Proceed via basic schema of:
 *Preprocess
 *Train
 *Metrics
+```{r}
+## Ensure death14 is a factor for outcome
+AKI_mod <- AKI_set %>%
+  mutate(death14 = factor(death14, 
+                          levels = c(0, 1),
+                          labels = c("alive", "dead")))
+
+## Split into training & testing data
+set.seed(19)
+splits <- initial_split(AKI_mod, 
+                        prop = 0.75, 
+                        strata = death14)
+AKI_train <- training(splits) 
+AKI_test <- testing(splits)
+ 
+# Create a recipe for the model 
+lr_rec <- recipe(death14 ~ ., data = AKI_train) %>%
+  themis::step_downsample(death14) %>% # to address class imbalance
+  step_corr(all_numeric(), threshold = 0.7) %>% # remove vars that are highly correlated with others
+  step_center(all_numeric()) %>%
+  step_nzv(all_predictors()) # remove near zero variance predictors 
+
+# Choose a model and an 'engine'
+lr_mod <- logistic_reg(mode = "classification") %>%
+  set_engine("glm")
+
+# Combine into a workflow
+lr_wflow <- workflow() %>%
+  add_recipe(lr_rec) %>%
+  add_model(lr_mod)
+
+# train the model
+AKI_fit_lr <- lr_wflow %>%
+  fit(AKI_train)
+
+# Predict on the test data
+AKI_pred_lr <- predict(AKI_fit_lr, AKI_test) %>% 
+  bind_cols(AKI_test %>% select(death14)) %>% 
+  bind_cols(predict(AKI_fit_lr, AKI_test, type = "prob"))
+# Check metrics
+AKI_pred_lr %>% 
+  metrics(truth = death14, .pred_class)
+
+#ROC curve & AUROC 
+AKI_pred_lr %>%
+  roc_curve(truth = death14, .pred_alive)%>%
+  autoplot()
+
+AKI_pred_lr %>%
+  roc_auc(truth = death14, .pred_alive)
+
+#Calibration Plot
+calibration_plot <- AKI_pred_lr %>% 
+  mutate(
+    alive = if_else(death14 == "alive", 1, 0),
+    pred_rnd = round(.pred_alive, 2)
+    ) %>% 
+  group_by(pred_rnd) %>% 
+  summarize(
+    mean_pred = mean(.pred_alive),
+    mean_obs = mean(alive),
+    n = n()
+    ) %>% 
+  ggplot(aes(x = mean_pred, y = mean_obs)) +
+  geom_abline(linetype = "dashed") +
+  geom_point(aes(size = n), alpha = 0.5) +
+  theme_light()
+```
+
 
 ## Scrap 
 ```{r}
